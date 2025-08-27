@@ -1,0 +1,418 @@
+<!--
+MindEase Prototype - Single-file web app
+Features:
+- Simple chat interface with rule-based AI responses
+- Mood quick-entry buttons (Happy, Sad, Anxious) stored in localStorage
+- Panic Mode with breathing animation and grounding steps
+- Basic mood analytics chart (canvas)
+
+How to use:
+1. Save this file as MindEase_prototype.html
+2. Open it in a modern browser (double-click the file or open via browser "Open File")
+3. Interact with the chat, log moods, and try Panic Mode
+
+Note: This is a front-end proof-of-concept. It simulates AI with keyword-based responses and stores data locally in your browser.
+-->
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MindEase Prototype</title>
+  <style>
+    :root{
+      --bg:#f6fbff;
+      --card:#ffffff;
+      --muted:#6b7280;
+      --accent:#5b8def;
+      --success:#34d399;
+      --danger:#fb7185;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:linear-gradient(180deg,#f6fbff 0%, #eef7ff 100%);color:#0f172a}
+    header{display:flex;align-items:center;gap:12px;padding:22px 28px}
+    .logo{width:56px;height:56px;border-radius:12px;background:linear-gradient(135deg,var(--accent),#8cc6ff);display:flex;align-items:center;justify-content:center;color:white;font-weight:700;font-size:20px}
+    h1{margin:0;font-size:20px}
+    p.lead{margin:4px 0 0;color:var(--muted);font-size:13px}
+
+    .container{max-width:1100px;margin:20px auto;padding:20px;display:grid;grid-template-columns:1fr 380px;gap:20px}
+    .card{background:var(--card);border-radius:14px;padding:18px;box-shadow:0 6px 18px rgba(12,26,48,0.06)}
+
+    /* Chat column */
+    .chat-area{display:flex;flex-direction:column;height:72vh}
+    .messages{flex:1;overflow:auto;padding:12px;border-radius:8px;background:linear-gradient(180deg,rgba(91,141,239,0.04),transparent)}
+    .msg{margin:8px 0;max-width:78%}
+    .user{align-self:flex-end;background:#e6f2ff;padding:10px 12px;border-radius:12px;color:#0b2446}
+    .bot{align-self:flex-start;background:#ffffff;padding:10px 12px;border-radius:12px;border:1px solid rgba(15,23,42,0.04)}
+    .meta{font-size:11px;color:var(--muted);margin-top:6px}
+
+    .controls{display:flex;gap:8px;align-items:center;padding-top:10px}
+    .input{flex:1;display:flex;gap:8px}
+    input[type=text]{flex:1;padding:10px;border-radius:10px;border:1px solid #e6eef9}
+    button{padding:10px 12px;border-radius:10px;border:0;background:var(--accent);color:white;cursor:pointer}
+    button.secondary{background:#eef2ff;color:#13315c}
+
+    /* Right column */
+    .side{display:flex;flex-direction:column;gap:14px;height:72vh}
+    .mood-buttons{display:flex;gap:8px;justify-content:space-between}
+    .mood-btn{flex:1;padding:10px;border-radius:10px;border:1px dashed rgba(15,23,42,0.06);cursor:pointer;text-align:center}
+    .mood-btn span{display:block;font-weight:700}
+    .stats{height:160px}
+
+    .panic-card{display:flex;flex-direction:column;gap:10px;align-items:center;justify-content:center}
+    .panic-btn{background:var(--danger);color:white;padding:12px 14px;border-radius:10px;border:0;font-weight:700}
+
+    /* Breathing animation */
+    .breath-modal{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(2,6,23,0.5);backdrop-filter:blur(2px);}
+    .breath-box{background:linear-gradient(180deg,#fff,#f1f9ff);padding:24px;border-radius:18px;text-align:center;max-width:420px;width:90%}
+    .circle{width:140px;height:140px;border-radius:50%;background:radial-gradient(circle at 30% 30%, rgba(91,141,239,0.25), rgba(91,141,239,0.06));margin:16px auto;display:flex;align-items:center;justify-content:center}
+    .pulse{width:80px;height:80px;border-radius:50%;background:linear-gradient(135deg,var(--accent),#8cc6ff);display:flex;align-items:center;justify-content:center;color:white;font-size:18px}
+
+    /* animation controlled via CSS variable */
+    .pulse.animate{animation:breath 4s infinite ease-in-out}
+    @keyframes breath{
+      0%{transform:scale(1)}
+      40%{transform:scale(1.65)}
+      70%{transform:scale(1.25)}
+      100%{transform:scale(1)}
+    }
+
+    .footer-note{font-size:12px;color:var(--muted);margin-top:6px}
+
+    /* Small screen */
+    @media(max-width:900px){.container{grid-template-columns:1fr;}.side{height:auto}} 
+  </style>
+</head>
+<body>
+  <header>
+    <div style="margin-left:auto">
+  <select id="languageSwitcher">
+    <option value="en">English</option>
+    <option value="ms">Bahasa Melayu</option>
+  </select>
+</div>
+
+    <div class="logo">ME</div>
+    <div>
+      <h1>MindEase — Prototype</h1>
+      <p class="lead">Private mental health assistant • Mood tracking • Panic support</p>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="card chat-area">
+      <div class="messages" id="messages" aria-live="polite"></div>
+
+      <div class="controls">
+        <div class="input">
+          <input type="text" id="userInput" placeholder="How are you feeling? Type a message or try: 'I'm panicking'" />
+          <button id="sendBtn">Send</button>
+        </div>
+        <button class="secondary" id="panicQuick">Panic Mode</button>
+      </div>
+      <div class="meta">Tip: Try typing 'panic', 'anxious', 'sad', or 'i can't breathe' to test the assistant.</div>
+    </section>
+
+    <aside class="side">
+      <div class="card">
+        <h3>Quick Mood Log</h3>
+        <div class="mood-buttons" id="moodButtons">
+          <div class="mood-btn" data-mood="happy"><span>😊</span><small class="muted">Happy</small></div>
+          <div class="mood-btn" data-mood="sad"><span>😔</span><small class="muted">Sad</small></div>
+          <div class="mood-btn" data-mood="anxious"><span>😰</span><small class="muted">Anxious</small></div>
+        </div>
+        <div class="footer-note">Logs are stored locally on this browser only.</div>
+      </div>
+
+      <div class="card">
+        <h3>Stats</h3>
+        <canvas id="moodChart" class="stats"></canvas>
+        <div class="footer-note">Mood overview from local logs</div>
+      </div>
+
+      <div class="card panic-card">
+        <h3 style="margin:0">Panic Support</h3>
+        <p style="margin:6px 0;color:var(--muted);font-size:13px;text-align:center">A guided breathing exercise for immediate relief.</p>
+        <button class="panic-btn" id="startPanic">Start Breathing</button>
+        <div class="footer-note">If in danger, contact local emergency services.</div>
+      </div>
+    </aside>
+  </main>
+
+  <!-- Breathing Modal -->
+  <div class="breath-modal" id="breathModal" role="dialog" aria-modal="true">
+    <div class="breath-box card">
+      <h2 id="breathTitle">Breathe with me</h2>
+      <p id="breathInstruction">Follow the circle: inhale — hold — exhale.</p>
+      <div class="circle">
+        <div class="pulse" id="pulseCircle">Breathe</div>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:center;margin-top:10px">
+        <button id="stopBreath" class="secondary">Stop</button>
+        <button id="groundBtn">Grounding Steps</button>
+      </div>
+      <p style="margin-top:10px;color:var(--muted);font-size:13px">Tip: Try '5-4-3-2-1' grounding if you're very anxious.</p>
+    </div>
+  </div>
+
+  <script>
+    // Simple rule-based AI responses
+    const messagesEl = document.getElementById('messages');
+    const inputEl = document.getElementById('userInput');
+    const sendBtn = document.getElementById('sendBtn');
+    const panicQuick = document.getElementById('panicQuick');
+
+    function appendMessage(text, who='bot'){
+      const div = document.createElement('div');
+      div.className = 'msg ' + (who==='user' ? 'user' : 'bot');
+      div.innerHTML = text;
+      messagesEl.appendChild(div);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+
+    const translations = {
+  en: {
+    greeting: "Hi, I'm MindEase — I'm here to listen. You can type how you feel or use the quick mood buttons.",
+    panicMode: "Panic Mode",
+    send: "Send",
+    moodLog: "Quick Mood Log",
+    stats: "Stats",
+    panicSupport: "Panic Support",
+    panicDesc: "A guided breathing exercise for immediate relief.",
+    stop: "Stop",
+    grounding: "Grounding Steps",
+    breathingTitle: "Breathe with me",
+    breathingInstruction: "Follow the circle: inhale — hold — exhale."
+  },
+  ms: {
+    greeting: "Hai, saya MindEase — Saya di sini untuk mendengar. Anda boleh menaip perasaan anda atau gunakan butang mood cepat.",
+    panicMode: "Mod Panik",
+    send: "Hantar",
+    moodLog: "Log Mood Cepat",
+    stats: "Statistik",
+    panicSupport: "Sokongan Panik",
+    panicDesc: "Latihan pernafasan berpandu untuk kelegaan segera.",
+    stop: "Berhenti",
+    grounding: "Langkah Grounding",
+    breathingTitle: "Tarik Nafas Bersama Saya",
+    breathingInstruction: "Ikuti bulatan: tarik nafas — tahan — hembus."
+  }
+};
+
+const langSelect = document.getElementById('languageSwitcher');
+let currentLang = 'en';
+
+function updateLanguage(lang) {
+  currentLang = lang;
+  document.getElementById('sendBtn').textContent = translations[lang].send;
+  document.getElementById('panicQuick').textContent = translations[lang].panicMode;
+  document.querySelector('.card h3').textContent = translations[lang].moodLog;
+  document.querySelector('.side .card:nth-child(2) h3').textContent = translations[lang].stats;
+  document.querySelector('.panic-card h3').textContent = translations[lang].panicSupport;
+  document.querySelector('.panic-card p').textContent = translations[lang].panicDesc;
+  document.getElementById('stopBreath').textContent = translations[lang].stop;
+  document.getElementById('groundBtn').textContent = translations[lang].grounding;
+  document.getElementById('breathTitle').textContent = translations[lang].breathingTitle;
+  document.getElementById('breathInstruction').textContent = translations[lang].breathingInstruction;
+  
+  // Update initial greeting dynamically
+  messagesEl.innerHTML = '';
+  appendMessage(translations[lang].greeting, 'bot');
+}
+
+langSelect.addEventListener('change', (e) => {
+  updateLanguage(e.target.value);
+});
+
+// Initialize with English
+updateLanguage('en');
+
+function simpleAIResponse(text){
+  const t = text.toLowerCase();
+  if(currentLang === 'ms'){
+    if(t.includes('panik') || t.includes('bantu')) return {type:'panic', text:"Saya dengar anda panik. Mari cuba latihan pernafasan bersama. Klik \"Mod Panik\"."};
+    if(t.includes('cemas') || t.includes('gelisah')) return {type:'empathy', text:"Saya faham anda cemas. Anda tidak keseorangan — mahu cuba pernafasan atau langkah grounding?"};
+    return {type:'neutral', text:"Terima kasih kerana berkongsi. Ceritakan lebih lanjut atau taip 'panik' untuk bantuan segera."};
+  } else {
+    if(t.includes('panic') || t.includes('help')) return {type:'panic', text:"I hear that you're feeling panicked. Let's try a breathing exercise together. Click \"Panic Mode\"."};
+    if(t.includes('anxious') || t.includes('worried')) return {type:'empathy', text:"I'm sorry you're feeling anxious. You're not alone — want to try a quick breathing or grounding exercise?"};
+    return {type:'neutral', text:"Thanks for sharing. Tell me more, or try typing 'panic' to get immediate breathing support."};
+  }
+}
+
+
+    function simpleAIResponse(text){
+      const t = text.toLowerCase();
+      // Panic triggers
+      const panicKeywords = ['panic','panicking','i cant breathe','i can\'t breathe','help me breathe','breathing'];
+      for(const k of panicKeywords){ if(t.includes(k)) return {type:'panic', text:"I hear that you're feeling panicked. Let's try a breathing exercise together. Click \"Panic Mode\" or the breathing button on the right."}; }
+
+      // anxious
+      const anxious = ['anxious','anxiety','nervous','worried','scared'];
+      for(const k of anxious){ if(t.includes(k)) return {type:'empathy', text:"I'm sorry you're feeling anxious. You're not alone — want to try a quick breathing or grounding exercise?"}; }
+
+      // sad
+      const sad = ['sad','depressed','hopeless','worthless','down'];
+      for(const k of sad){ if(t.includes(k)) return {type:'empathy', text:"I'm really sorry you're feeling down. Would you like to write a short journal entry about what's happening? It sometimes helps to put thoughts into words."}; }
+
+      // positive
+      const happy = ['good','well','happy','great','better'];
+      for(const k of happy){ if(t.includes(k)) return {type:'positive', text:"That's great to hear. Keep doing what helps you feel well — and I'm here if you need anything."}; }
+
+      // default
+      return {type:'neutral', text:"Thanks for sharing. Tell me more, or try typing 'panic' to get immediate breathing support."};
+    }
+
+    sendBtn.addEventListener('click', ()=>{
+      const text = inputEl.value.trim();
+      if(!text) return;
+      appendMessage(escapeHtml(text),'user');
+      inputEl.value='';
+      // store minimal log if mood-like
+      saveChatLog('user', text);
+      setTimeout(()=>{
+        const resp = simpleAIResponse(text);
+        appendMessage(escapeHtml(resp.text),'bot');
+        if(resp.type==='panic') openBreathModal();
+      }, 700 + Math.random()*600);
+    });
+
+    inputEl.addEventListener('keydown', (e)=>{ if(e.key==='Enter') sendBtn.click(); });
+    panicQuick.addEventListener('click', openBreathModal);
+
+    // Mood buttons logic
+    const moods = ['happy','sad','anxious'];
+    document.getElementById('moodButtons').addEventListener('click', (e)=>{
+      const btn = e.target.closest('.mood-btn');
+      if(!btn) return;
+      const mood = btn.dataset.mood;
+      logMood(mood);
+      appendMessage('<strong>Mood logged:</strong> ' + mood, 'bot');
+      drawChart();
+    });
+
+    // Local storage: chat logs and mood logs
+    function saveChatLog(who, text){
+      const d = new Date().toISOString();
+      const logs = JSON.parse(localStorage.getItem('mind_logs')||'[]');
+      logs.push({who, text, time:d});
+      localStorage.setItem('mind_logs', JSON.stringify(logs));
+    }
+
+    function logMood(mood){
+      const m = JSON.parse(localStorage.getItem('mind_moods')||'[]');
+      m.push({mood, time:new Date().toISOString()});
+      localStorage.setItem('mind_moods', JSON.stringify(m));
+    }
+
+    // Simple mood chart
+    const chartCanvas = document.getElementById('moodChart');
+    const ctx = chartCanvas.getContext('2d');
+    function drawChart(){
+      const m = JSON.parse(localStorage.getItem('mind_moods')||'[]');
+      const counts = {happy:0,sad:0,anxious:0};
+      m.forEach(x=>{ if(counts[x.mood]!==undefined) counts[x.mood]++; });
+      // resize
+      chartCanvas.width = chartCanvas.clientWidth;
+      chartCanvas.height = 140;
+      // clear
+      ctx.clearRect(0,0,chartCanvas.width,chartCanvas.height);
+      const labels = ['happy','sad','anxious'];
+      const colors = ['#34d399','#fb7185','#f59e0b'];
+      const total = counts.happy+counts.sad+counts.anxious || 1;
+      const barWidth = (chartCanvas.width - 40) / labels.length;
+      labels.forEach((lab,i)=>{
+        const x = 20 + i*barWidth;
+        const h = (counts[lab]/total) * (chartCanvas.height - 40);
+        ctx.fillStyle = colors[i];
+        ctx.fillRect(x, chartCanvas.height - 20 - h, barWidth*0.6, h);
+        ctx.fillStyle = '#0f172a';
+        ctx.font = '12px Arial';
+        ctx.fillText(lab + ' ('+counts[lab]+')', x, chartCanvas.height - 2);
+      });
+    }
+
+    drawChart();
+
+    // Breathing modal logic
+    const breathModal = document.getElementById('breathModal');
+    const pulse = document.getElementById('pulseCircle');
+    const stopBreath = document.getElementById('stopBreath');
+    const startPanic = document.getElementById('startPanic');
+    const groundBtn = document.getElementById('groundBtn');
+
+    function openBreathModal(){
+      breathModal.style.display='flex';
+      pulse.classList.add('animate');
+      startBreathingGuidance();
+    }
+    function closeBreathModal(){
+      breathModal.style.display='none';
+      pulse.classList.remove('animate');
+      stopBreathingGuidance();
+    }
+    startPanic.addEventListener('click', openBreathModal);
+    stopBreath.addEventListener('click', closeBreathModal);
+
+    // breathing guidance speaks steps visually (no TTS)
+    let breathInterval;
+    function startBreathingGuidance(){
+      const title = document.getElementById('breathTitle');
+      const instr = document.getElementById('breathInstruction');
+      let stage = 0; // 0 inhale,1 hold,2 exhale
+      instr.textContent = 'Inhale (4s) — Hold (4s) — Exhale (6s)';
+      pulse.textContent = 'Breathe';
+      stage = 0;
+      // cycle: inhale 4s, hold 4s, exhale 6s => 14s total
+      let cycle = 0;
+      breathInterval = setInterval(()=>{
+        cycle = (cycle+1)%14;
+        if(cycle===0) { pulse.textContent = 'Inhale'; }
+        else if(cycle===4) { pulse.textContent = 'Hold'; }
+        else if(cycle===8) { pulse.textContent = 'Exhale'; }
+      },1000);
+    }
+    function stopBreathingGuidance(){ clearInterval(breathInterval); }
+
+    groundBtn.addEventListener('click', ()=>{
+      // 5-4-3-2-1 grounding
+      const steps = [
+        'Look around and name 5 things you can see.',
+        'Name 4 things you can touch.',
+        'Name 3 things you can hear.',
+        'Name 2 things you can smell.',
+        'Name 1 thing you can taste.'
+      ];
+      let idx=0;
+      pulse.textContent = 'Grounding';
+      stopBreathingGuidance();
+      const title = document.getElementById('breathTitle');
+      title.textContent = 'Grounding - 5-4-3-2-1';
+      const instr = document.getElementById('breathInstruction');
+      instr.textContent = steps[idx];
+      const gInt = setInterval(()=>{
+        idx++;
+        if(idx>=steps.length){ clearInterval(gInt); instr.textContent = 'Great — take a few slow breaths.'; } else {
+          instr.textContent = steps[idx];
+        }
+      },6000);
+    });
+
+    // small helper to escape HTML
+    function escapeHtml(unsafe) { return unsafe.replace(/[&<"']/g, function(m){ return {'&':'&amp;','<':'&lt;','"':'&quot;',"'":'&#039;'}[m]; }); }
+
+    // initial greeting and load previous logs
+    window.addEventListener('load', ()=>{
+      appendMessage('Hi, I\'m MindEase — I\'m here to listen. You can type how you feel or use the quick mood buttons.', 'bot');
+      // replay previous user messages? skip for sensitivity
+      drawChart();
+    });
+
+    // accessibility: close modal on escape
+    document.addEventListener('keydown',(e)=>{ if(e.key==='Escape') closeBreathModal(); });
+
+  </script>
+</body>
+</html>
